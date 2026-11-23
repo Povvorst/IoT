@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IoT Dashboard - REST API</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+* { margin:0; padding:0; box-sizing:border-box; font-family:Inter,'Segoe UI',sans-serif; }
+:root { --bg:#0b1220; --surface:#121c2d; --surface2:#172338; --line:#25334a; --muted:#93a4bd; --text:#e9f0fb; --accent:#5eead4; --blue:#72a7ff; --orange:#ffb86b; }
+body { background:radial-gradient(ellipse at top left,#172c46 0%,#0b1220 55%); min-height:100vh; padding:28px; color:var(--text); }
+.container { max-width:1180px; margin:0 auto; }
+h1 { color:var(--text); font-size:28px; font-weight:800; text-align:left; margin-bottom:6px; letter-spacing:-.7px; }
+.header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:26px; }
+.subtitle { color:var(--muted); font-size:13px; }
+.header-meta { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:18px; }
+.card,.panel { background:linear-gradient(145deg,rgba(23,35,56,.96),rgba(17,27,43,.96)); border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 14px 36px rgba(0,0,0,.16); }
+.card { text-align:left; position:relative; overflow:hidden; min-height:140px; }
+.card:after { content:''; position:absolute; right:-25px; top:-30px; width:110px; height:110px; border-radius:50%; background:rgba(94,234,212,.06); }
+.card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:1.1px; font-weight:600; }
+.card .value { font-size:40px; font-weight:800; margin:14px 0 4px; color:var(--text); letter-spacing:-1px; }
+.card .unit { font-size:14px; color:var(--muted); }
+#suhu { color:var(--orange); } #kelembaban { color:var(--blue); }
+.status-badge { display:inline-block; padding:7px 12px; border-radius:99px; font-size:11px; font-weight:700; letter-spacing:.6px; }
+.status-online { background:rgba(94,234,212,.12); color:var(--accent); border:1px solid rgba(94,234,212,.3); }
+.status-offline { background:rgba(255,105,120,.12); color:#ff8795; border:1px solid rgba(255,105,120,.25); }
+.panel { margin-bottom:18px; }
+.panel h2 { font-size:16px; font-weight:700; margin-bottom:18px; color:var(--text); display:flex; align-items:center; gap:9px; }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.btn { padding:11px 18px; border:none; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; color:#08111f; transition:transform .15s,filter .15s; }
+.btn:hover { filter:brightness(1.08); transform:translateY(-1px); }
+.btn-on { background:var(--accent); } .btn-off { background:#ff7788; } .btn-set { background:var(--blue); }
+input[type=number] { padding:11px 13px; border:1px solid var(--line); background:#0c1626; color:var(--text); border-radius:10px; width:130px; font-size:14px; outline:none; }
+input[type=number]:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(114,167,255,.12); }
+#alert { display:none; background:rgba(255,184,107,.1); color:#ffd18f; border:1px solid rgba(255,184,107,.3); border-left:4px solid var(--orange); border-radius:12px; padding:14px 16px; margin-bottom:18px; font-weight:600; }
+.chart-box { position:relative; height:290px; }
+table { width:100%; border-collapse:collapse; }
+th,td { padding:12px 14px; text-align:left; border-bottom:1px solid var(--line); font-size:13px; color:#c7d5e8; }
+th { background:#101a2a; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.7px; }
+tbody tr:hover { background:rgba(114,167,255,.04); }
+#log { background:#09101b; color:var(--accent); border:1px solid var(--line); font-family:monospace; padding:15px; border-radius:12px; max-height:190px; overflow-y:auto; font-size:12px; line-height:1.7; }
+#log .error { color:#ff7b8a; } #log .info { color:#80b6ff; } #log .warn { color:#ffc875; }
+@media(max-width:600px){ body{padding:15px;} .header{align-items:flex-start;flex-direction:column;} h1{font-size:23px;} .card .value{font-size:34px;} .panel{padding:17px;} }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header"><div><h1>Smart Room Monitor</h1><div class="subtitle">IoT Sensor Dashboard · REST API monitoring</div></div><div class="header-meta">● Live monitoring <span id="status-badge" class="status-badge status-offline">OFFLINE</span></div></div>
+
+  <div id="alert"></div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Suhu</div><div class="value" id="suhu">--</div><div class="unit">°C</div></div>
+    <div class="card"><div class="label">Kelembaban</div><div class="value" id="kelembaban">--</div><div class="unit">%</div></div>
+    <div class="card">
+      <div class="label">Status Sensor</div>
+      <div class="value" style="font-size:22px;"><span class="status-badge status-offline" id="status-badge-card">OFFLINE</span></div>
+      <div class="unit" style="font-size:13px;">Koneksi: <span id="conn">polling</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Grafik Real-time</h2>
+    <div class="chart-box"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h2>Kontrol Perangkat</h2>
+    <div class="row">
+      <button class="btn btn-on" onclick="kontrol('lamp','on')">Nyalakan Lampu</button>
+      <button class="btn btn-off" onclick="kontrol('lamp','off')">Matikan Lampu</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Batas Suhu (Threshold)</h2>
+    <div class="row">
+      <input type="number" id="th-input" step="0.1" placeholder="mis. 30">
+      <button class="btn btn-set" onclick="setThreshold()">Simpan batas</button>
+      <span id="th-now" style="color:#666;">Batas aktif: belum diset</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>10 Data Sensor Terakhir</h2>
+    <table>
+      <thead><tr><th>Waktu</th><th>Suhu (°C)</th><th>Kelembaban (%)</th></tr></thead>
+      <tbody id="history-body"><tr><td colspan="3" style="text-align:center;color:#999;">Belum ada data</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="panel"><h2>Log Aktivitas</h2><div id="log"></div></div>
+</div>
+
+<script>
+// ===== KONFIGURASI =====
+const HOST = 'localhost:1880';
+const API = `http://${HOST}/api`;
+const WS_URL = `ws://${HOST}/ws/sensor`;
+const API_KEY = 'rahasia123';        // harus sama dengan di flow Node-RED
+const HISTORY_PATH = '/history';     // ganti ke '/history/db' setelah Tugas 5
+
+const $ = id => document.getElementById(id);
+let hist = [], wsOpen = false, lastRx = 0;
+
+function log(msg, type = 'info') {
+  const el = $('log');
+  el.innerHTML += `<div class="${type}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// Semua request REST membawa header X-API-Key (Tugas 3)
+async function api(path, opt = {}) {
+  const res = await fetch(API + path, {
+    ...opt,
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }
+  });
+  const json = await res.json();
+  if (res.status === 401) throw new Error(json.message);
+  return json;
+}
+
+// ===== GRAFIK (Tugas 2) =====
+const chart = new Chart($('chart'), {
+  type: 'line',
+  data: { labels: [], datasets: [
+    { label: 'Suhu (°C)', data: [], borderColor: '#e8590c', backgroundColor: '#e8590c', tension: .3 },
+    { label: 'Kelembaban (%)', data: [], borderColor: '#667eea', backgroundColor: '#667eea', tension: .3 }
+  ]},
+  options: { animation: false, responsive: true, maintainAspectRatio: false }
+});
+
+function render() {
+  const last = hist.slice(-20);
+  chart.data.labels = last.map(d => new Date(d.received).toLocaleTimeString());
+  chart.data.datasets[0].data = last.map(d => d.suhu);
+  chart.data.datasets[1].data = last.map(d => d.kelembaban);
+  chart.update();
+
+  const rows = hist.slice(-10).reverse().map(d => `
+    <tr><td>${new Date(d.received).toLocaleTimeString()}</td><td>${d.suhu}</td><td>${d.kelembaban}</td></tr>`).join('');
+  $('history-body').innerHTML = rows || '<tr><td colspan="3" style="text-align:center;color:#999;">Belum ada data</td></tr>';
+}
+
+function showSensor(d) {
+  $('suhu').textContent = d.suhu;
+  $('kelembaban').textContent = d.kelembaban;
+  lastRx = Date.now();
+  setStatus(true);
+}
+
+function setStatus(online) {
+  const b = $('status-badge');
+  b.textContent = online ? 'ONLINE' : 'OFFLINE';
+  b.className = 'status-badge ' + (online ? 'status-online' : 'status-offline');
+}
+setInterval(() => { if (lastRx && Date.now() - lastRx > 10000) setStatus(false); }, 2000);
+
+// ===== POLLING (cadangan bila WebSocket putus) =====
+async function fetchSensor() {
+  try {
+    const json = await api('/suhu');
+    if (json.status === 'success' && json.data.suhu !== null) showSensor(json.data);
+  } catch (e) { log(`Gagal fetch sensor: ${e.message}`, 'error'); }
+}
+async function fetchHistory() {
+  try {
+    const json = await api(HISTORY_PATH);
+    hist = json.data || [];
+    render();
+  } catch (e) { log(`Gagal fetch history: ${e.message}`, 'error'); }
+}
+
+// ===== WEBSOCKET (Tugas 4) =====
+function connectWS() {
+  const ws = new WebSocket(WS_URL);
+  ws.onopen = () => { wsOpen = true; $('conn').textContent = 'WebSocket'; log('WebSocket terhubung, polling dimatikan'); };
+  ws.onclose = () => {
+    if (wsOpen) log('WebSocket terputus, kembali ke polling', 'warn');
+    wsOpen = false; $('conn').textContent = 'polling';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'sensor') {
+      hist.push(m.data); if (hist.length > 50) hist.shift();
+      showSensor(m.data); render();
+    } else if (m.type === 'alert') {
+      showAlert(m.message);
+    }
+  };
+}
+
+// ===== THRESHOLD & NOTIFIKASI (Tugas 1) =====
+let alertTimer;
+function showAlert(text) {
+  const el = $('alert');
+  el.textContent = 'Peringatan: ' + text;
+  el.style.display = 'block';
+  log(text, 'warn');
+  clearTimeout(alertTimer);
+  alertTimer = setTimeout(() => el.style.display = 'none', 8000);
+}
+async function loadThreshold() {
+  try {
+    const json = await api('/threshold');
+    if (json.max !== null) $('th-now').textContent = `Batas aktif: ${json.max} °C`;
+  } catch (e) { log(`Gagal baca threshold: ${e.message}`, 'error'); }
+}
+async function setThreshold() {
+  const max = parseFloat($('th-input').value);
+  if (isNaN(max)) { log('Isi batas suhu dengan angka', 'error'); return; }
+  try {
+    const json = await api('/threshold', { method: 'PUT', body: JSON.stringify({ max }) });
+    if (json.status === 'success') { log(`Batas suhu disimpan: ${json.max} °C`); $('th-now').textContent = `Batas aktif: ${json.max} °C`; }
+    else log(`Gagal: ${json.message}`, 'error');
+  } catch (e) { log(`Error threshold: ${e.message}`, 'error'); }
+}
+
+// ===== KONTROL =====
+async function kontrol(device, action) {
+  try {
+    const json = await api('/kontrol', { method: 'POST', body: JSON.stringify({ device, action }) });
+    if (json.status === 'success') log(`Perintah terkirim: ${device} -> ${action}`);
+    else log(`Gagal: ${json.message}`, 'error');
+  } catch (e) { log(`Error kontrol: ${e.message}`, 'error'); }
+}
+
+// ===== START =====
+log('Dashboard dimulai');
+fetchHistory(); fetchSensor(); loadThreshold(); connectWS();
+setInterval(() => { if (!wsOpen) { fetchSensor(); fetchHistory(); } }, 3000);
+</script>
+</body>
+</html>
